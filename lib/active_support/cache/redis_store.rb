@@ -1,10 +1,11 @@
 # encoding: UTF-8
 require 'redis-store'
+require 'set'
 
 module ActiveSupport
   module Cache
     class RedisStore < Store
-      attr_reader :data
+      attr_reader :data, :ignored_command_errors
 
       # Instantiate the store.
       #
@@ -51,6 +52,8 @@ module ActiveSupport
                   ::Redis::Store::Factory.create(*addresses)
                 end
 
+        @ignored_command_errors = ::Set.new(@options.fetch(:ignored_command_errors, []))
+
         super(@options)
       end
 
@@ -82,6 +85,11 @@ module ActiveSupport
             with do |store|
               !(keys = store.keys(matcher)).empty? && store.del(*keys)
             end
+
+          rescue Redis::CommandError => error
+            raise unless @ignored_command_errors.include?(error)
+            raise if raise_errors?
+            false
           rescue Errno::ECONNREFUSED, Errno::EHOSTUNREACH, Redis::CannotConnectError
             raise if raise_errors?
             false
@@ -234,6 +242,11 @@ module ActiveSupport
         def write_entry(key, entry, options)
           method = options && options[:unless_exist] ? :setnx : :set
           with { |client| client.send method, key, entry, options }
+
+        rescue Redis::CommandError => error
+          raise unless ignored_command_errors.include?(error)
+          raise if raise_errors?
+          false
         rescue Errno::ECONNREFUSED, Errno::EHOSTUNREACH, Redis::CannotConnectError
           raise if raise_errors?
           false
@@ -244,6 +257,11 @@ module ActiveSupport
           if entry
             entry.is_a?(ActiveSupport::Cache::Entry) ? entry : ActiveSupport::Cache::Entry.new(entry)
           end
+
+        rescue Redis::CommandError => error
+          raise unless ignored_command_errors.include?(error.message)
+          raise if raise_errors?
+          nil
         rescue Errno::ECONNREFUSED, Errno::EHOSTUNREACH, Redis::CannotConnectError
           raise if raise_errors?
           nil
@@ -256,6 +274,11 @@ module ActiveSupport
         #
         def delete_entry(key, options)
           with { |c| c.del key }
+
+        rescue Redis::CommandError => error
+          raise unless ignored_command_errors.include?(error)
+          raise if raise_errors?
+          false
         rescue Errno::ECONNREFUSED, Errno::EHOSTUNREACH, Redis::CannotConnectError
           raise if raise_errors?
           false

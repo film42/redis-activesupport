@@ -628,6 +628,30 @@ describe ActiveSupport::Cache::RedisStore do
     end
   end
 
+  describe "raise_errors => true command error" do
+    def setup
+      @raise_error_store = ActiveSupport::Cache::RedisStore.new("redis://127.0.0.1:6380/1", :raise_errors => true, :ignored_command_errors => ["ERR Proxy error"])
+      @raise_error_store.stubs(:with).raises(Redis::CommandError.new("ERR Proxy error"))
+    end
+
+    it "raises on read when a command error is received" do
+      assert_raises(Redis::CommandError) do
+        @raise_error_store.read("rabbit")
+      end
+    end
+  end
+
+  describe "raise_errors => false command error" do
+    def setup
+      @raise_error_store = ActiveSupport::Cache::RedisStore.new("redis://127.0.0.1:6380/1", :raise_errors => false, :ignored_command_errors => ["ERR Proxy error"])
+      @raise_error_store.stubs(:with).raises(Redis::CommandError.new("ERR Proxy error"))
+    end
+
+    it "is nil when redis is unavailable" do
+      @raise_error_store.read("rabbit").must_be_nil
+    end
+  end
+
   describe "raise_errors => true" do
     def setup
       @raise_error_store = ActiveSupport::Cache::RedisStore.new("redis://127.0.0.1:6380/1", :raise_errors => true)
